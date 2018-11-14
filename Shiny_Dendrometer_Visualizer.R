@@ -34,8 +34,7 @@ ui <- fluidPage(
                                   choices = list("Yes" = TRUE, "No" = FALSE)))),
     
     column(5, imageOutput("image", height = "500px"), 
-          # verbatimTextOutput("name_image", placeholder = T))
-          textOutput("name_image"))
+                    textOutput("name_image"))
   ),
   
   hr(),
