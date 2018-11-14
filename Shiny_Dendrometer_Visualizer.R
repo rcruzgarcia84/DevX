@@ -33,8 +33,9 @@ ui <- fluidPage(
                                   label = "Show derived phenology?", 
                                   choices = list("Yes" = TRUE, "No" = FALSE)))),
     
-    column(5, imageOutput("image"), 
-           verbatimTextOutput("name_image"))
+    column(5, imageOutput("image", height = "500px"), 
+          # verbatimTextOutput("name_image", placeholder = T))
+          textOutput("name_image"))
   ),
   
   hr(),
@@ -87,8 +88,9 @@ server <- function(input, output) {
     tree_of_choice <- input$tree
     # With base graphics, need to tell it what the x and y variables are.
     filename <- normalizePath(file.path('/home/mochomo/Doktorarbeit/Microcore vs Dendrometer/images',
-                                        as.character(nearPoints(dendro_curves %>% filter(tree %in% tree_of_choice),
-                                                                input$plot_click, xvar = "tiempo", yvar = "Dendrometer",  threshold = 100000, maxpoints = 1, addDist = T)[,5])))
+                                        as.character(unique(na.omit(nearPoints(dendro_curves %>% filter(tree %in% tree_of_choice),
+                                                                               input$plot_click, xvar = "tiempo", yvar = "Dendrometer", 
+                                                                               threshold = 2000000, maxpoints = 5, addDist = T)[,5])[1])[1])))
     filename <- na.omit(filename)[[1]]
     # nearPoints() also works with hover and dblclick events
     list(src = filename,
@@ -103,13 +105,13 @@ server <- function(input, output) {
     tree_of_choice <- input$tree
     # With base graphics, need to tell it what the x and y variables are.
     filename <- normalizePath(file.path('/home/mochomo/Doktorarbeit/Microcore vs Dendrometer/images',
-                                        as.character(nearPoints(dendro_curves %>% filter(tree %in% tree_of_choice),
-                                                                input$plot_click, xvar = "tiempo", yvar = "Dendrometer", threshold = 100000, maxpoints = 1, addDist = T)[,5])))
+                                        as.character(unique(na.omit(nearPoints(dendro_curves %>% filter(tree %in% tree_of_choice),
+                                                                               input$plot_click, xvar = "tiempo", yvar = "Dendrometer", 
+                                                                               threshold = 2000000, maxpoints = 5, addDist = T)[,5])[1])[1])))
     substr(filename, 60, nchar(filename))
-                              })
- 
+  })
+  
 }
 
 # Run the app ----
 shinyApp(ui = ui, server = server)
-
