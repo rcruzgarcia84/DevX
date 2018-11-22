@@ -36,6 +36,8 @@ ui <- fluidPage(
                                   label = "Show annotated image?", 
                                   choices = list("Yes" = TRUE, "No" = FALSE), selected = FALSE))
            ),
+    column(2, wellPanel(radioButtons("weibull", label = "Show Weibull fit?", 
+                        choices = list("Yes" = TRUE, "No" = FALSE), selected = FALSE))),
     
     column(5, imageOutput("image", height = "500px"), 
            textOutput("name_image"))
@@ -51,10 +53,33 @@ ui <- fluidPage(
 server <- function(input, output) {
   dendrom_curves <- read_csv("/home/mochomo/Doktorarbeit/Microcore vs Dendrometer/Dendro_Visualizer/dendrom_curves_tidy.csv")
   
- growth_phenology <- read_csv("/home/mochomo/Doktorarbeit/Microcore vs Dendrometer/growth_phenology.csv")
+  
+  ### ### Using Weibull function
+  ### Fit a curve to each Dendrometer curve
+  ### and get growth phenology (5 and 95% amount of change for growth begin and cessation)
+  
+  dendrom_curves_models <- dendrom_curves %>% select(tiempo, Dendrometer, tree) %>% group_by(tree) %>% mutate(steps = seq_along(tiempo)) %>% ungroup() ## select columns of interest
+  ### and add a "steps" column for each tree, to model in base of that instead of the POSIXct data
+  
+  dendrom_curves_models_1 <- dendrom_curves_models %>% na.omit() %>% group_by(tree) %>% nest() %>% 
+    mutate(weibull = map(data, ~ nls(Dendrometer ~ SSweibull(steps, Asym, Drop, lrc, pwr), data = .)), tidied_weibull = map(weibull, tidy), weibull_fitted  = map(weibull, augment)) %>%
+    unnest(weibull_fitted) ###  apply the weibull models to each courve and get the fitted values with augment()
+  
+  pos_steps <- match(dendrom_curves_models_1$steps,dendrom_curves_models$steps) ## getting back the tiempo column, get matching positions with orignal table
+  
+  dendrom_curves_models_1[,"tiempo"] <- as.vector(dendrom_curves_models[pos_steps, "tiempo"]) ### put them back carefully (tibbles are messy)
   
   
-  output$dendro_curve <- renderPlot({
+  ### get the growth phases (onset, duration and cessation)
+  
+  growth_phenology <- dendrom_curves_models_1 %>% group_by(tree) %>% 
+    summarize(max(.fitted), min(.fitted), total_amplitude = max(.fitted) - min(.fitted), five_percent = total_amplitude * 0.05, ninety_five = total_amplitude *0.95, begin = max(.fitted) - ninety_five, 
+              cessation = max(.fitted) - five_percent, date_onset = tiempo[which.min(abs(.fitted - begin))], date_cessation = tiempo[which.min(abs(.fitted - cessation))], 
+              growth_duration = date_cessation - date_onset, doy_begin = yday(date_onset), doy_cessation = yday(date_cessation)) ##using which.min(abs("values" - "value to query")) you get the position of the closes value!
+  
+  rm(dendrom_curves_models)
+  
+   output$dendro_curve <- renderPlot({
     
     tree_of_choice <- input$tree
     
@@ -62,7 +87,7 @@ server <- function(input, output) {
     date_end <- input$date[2]
     
     if(input$radio == T){
-      dendrom_curves %>% filter(tree %in% tree_of_choice, tiempo >= date_begin & tiempo <= date_end) %>%
+      plot_true <- dendrom_curves %>% filter(tree %in% tree_of_choice, tiempo >= date_begin & tiempo <= date_end) %>%
         ggplot(aes(color = tree)) + geom_line(aes(x = tiempo, y = Dendrometer)) +
         geom_point(aes(x = x_images, y = y_value_points + 5, colour = tree), 
                    size = 4, alpha = 0.75, inherit.aes = T)+
@@ -71,15 +96,25 @@ server <- function(input, output) {
         scale_alpha(guide = F) + #scale_x_datetime(breaks = as.POSIXct(unique(days_wimage$date), "%Y-%m-%d"), labels = as.POSIXct(unique(days_wimage$date), "%Y-%m-%d")) +
         theme(panel.background = element_rect(fill = "white", color = "black"), 
               axis.text.x = element_text(angle = 90, hjust = 1)) 
+      if(input$weibull == TRUE){
+        plot_true <- plot_true + geom_line(aes(x = tiempo, y = .fitted, group = tree), color = "black", alpha = 0.7, data = dendrom_curves_models_1 %>%
+                    filter(tree %in% tree_of_choice, tiempo >= date_begin & tiempo <= date_end)) 
+        plot_true
+      } else {
+        plot_true
+      }
+      
+      plot_true
       
     } else {
-      dendrom_curves %>% filter(tree %in% tree_of_choice, tiempo >= date_begin & tiempo <= date_end) %>%
-        ggplot(aes(color = tree)) + geom_line(aes(x = tiempo, y = Dendrometer)) +
+      plot_false <- dendrom_curves %>% filter(tree %in% tree_of_choice, tiempo >= date_begin & tiempo <= date_end) %>%
+        ggplot(aes(color = tree)) + geom_line(aes(x = tiempo, y = Dendrometer)) + 
         geom_point(aes(x = x_images, y = y_value_points + 5, colour = tree), 
                    size = 4, alpha = 0.75, inherit.aes = T)+
         scale_alpha(guide = F) + #scale_x_datetime(breaks = as.POSIXct(unique(days_wimage$date), "%Y-%m-%d"), labels = as.POSIXct(unique(days_wimage$date), "%Y-%m-%d")) +
         theme(panel.background = element_rect(fill = "white", color = "black"), 
-              axis.text.x = element_text(angle = 90, hjust = 1))}
+              axis.text.x = element_text(angle = 90, hjust = 1))
+      plot_false}
     
     
   })
