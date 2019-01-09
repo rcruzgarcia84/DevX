@@ -1,14 +1,11 @@
 ### Shiny Dendrometer curves app!
 
-#install.packages("shiny")
 library(shiny)
 library(tidyverse)
 library(broom)
 library(lubridate)
-source("auxiliary_functions.R")
+source("auxiliary_functions.R", local = T)
 ###
-setwd("/home/mochomo/Doktorarbeit/Microcore vs Dendrometer/ProjectFolder/Dendrometer Microcore Viewer")
-getwd()
 
 ### Load data
 
@@ -18,8 +15,7 @@ dendrom_curves <- dendrom_curves %>% mutate(step_locator = seq_along(tiempo))
 
 dendrom_curves <- dendrom_curves %>% select(tiempo, Dendrometer, tree, step_locator) %>% na.omit() %>% 
   group_by(tree) %>% mutate(min_max_norm = min_max_norm(Dendrometer), 
-                            sri = Dendrometer - min(Dendrometer)) %>% 
-  ungroup() 
+                            sri = Dendrometer - min(Dendrometer)) %>% ungroup() 
 
 
 ### Bind Image Data and Dendrometer Data
@@ -30,7 +26,6 @@ image_dates <- image_dates %>% gather(key = "date", value = "image",  -Baum, -ID
 
 image_dates$date <- as.POSIXct(image_dates$date, format = "%d.%m.%y", tz = "UTC")
 
-
 ### Bind with DendrometerData
 
 ### Create the day_wimage object
@@ -40,19 +35,16 @@ days_wimage <- image_dates %>% filter(!is.na(image))
 rm(image_dates)
 
 ### Add a column to the dataframe with the path or name of the image file for the date!
+###
 
 ### Load image files, or names at least 
 
 bilder <- list.files("./images")
 
-
 ### you create a list of the files
-
-##then you compare which trees match (substr) and which dates (complex posixct and substr)
+### then you compare which trees match (substr) and which dates (complex posixct and substr)
 ### wrap around which and you have the rows where the files are supposed to go!
 
-#step_1 <- substr(bilder, 1, 5) %>% str_replace_all("_", "") %>% 
- # str_replace("1", "A") %>% str_replace("2", "B") %>% str_replace("3", "C")
 step_1 <- substr(bilder, 1, 4)
 
 step_2 <- as.POSIXct(substr(bilder, 6, nchar(bilder)-8), format = "%d%m%Y", tz = "UTC")
@@ -78,50 +70,44 @@ point_dates <- dendrom_curves$date[!is.na(dendrom_curves$file)]### get the dates
 
 row_with_date <- which(!is.na(dendrom_curves$file))## get the row positions
 
-length(point_dates);length(row_with_date)### same length
-
 dendrom_curves[row_with_date, "x_images"] <- as.POSIXct(point_dates, format = "%Y-%m-%d", tz = "UTC")### save it as character
 
 dendrom_curves$x_images <- as.POSIXct(dendrom_curves$x_images, origin = "1970-01-01")
 
-
 ### Add a clear Y value for points with image
 
-y_values <- dendrom_curves %>% group_by(file) %>% summarize(y_value_points_raw  = median(Dendrometer, na.rm = T), 
-                                                            y_value_points_norm  = median(min_max_norm, na.rm = T), 
-                                                            y_value_points_sri  = median(sri, na.rm = T)) %>%  filter(file != "NA")
-
+y_values <- dendrom_curves %>% filter(file != "NA") %>% group_by(tree, file) %>% summarize(y_value_points_raw  = mean(Dendrometer, na.rm = T), 
+                                                                                           y_value_points_norm  = mean(min_max_norm, na.rm = T), 
+                                                                                           y_value_points_sri  = mean(sri, na.rm = T))  
 
 dendrom_curves <- left_join(dendrom_curves, y_values, by = "file")
+### after here is tree.x
 
 rm(point_dates, row_with_date, file_wimage, y_values)
 
-
-
 ### Prepare data, modelling
 
-dendrom_curves_models <- dendrom_curves %>% select(tiempo, Dendrometer, tree, 
+dendrom_curves_models <- dendrom_curves %>% select(tiempo, Dendrometer, tree.x, 
                                                    step_locator, min_max_norm, sri) %>% na.omit() %>% 
-  group_by(tree) %>% mutate(steps = seq_along(tiempo)) %>% 
+  group_by(tree.x) %>% mutate(steps = seq_along(tiempo)) %>% 
   ungroup() ## select columns of interest
 ### and add a "steps" column for each tree, to model in base of that instead of the POSIXct data
 
 ### Gompertz Models
 
-dendrom_curves_models_g <- dendrom_curves_models %>% group_by(tree) %>% nest() %>%
+dendrom_curves_models_g <- dendrom_curves_models %>% group_by(tree.x) %>% nest() %>%
   mutate(gompertz = map(data, ~ nls_rcg(.)), tidied_gompertz = map(gompertz, tidy), gompertz_fitted  = map(gompertz, augment)) %>%
   unnest(gompertz_fitted)
 
 ### Weibull
 
-
 ### Primero get initials pa todos
 
-initials_weibull <- vector(mode = "list", length = length(unique(dendrom_curves_models$tree)))
-names(initials_weibull) <- unique(dendrom_curves_models$tree)
+initials_weibull <- vector(mode = "list", length = length(unique(dendrom_curves_models$tree.x)))
+names(initials_weibull) <- unique(dendrom_curves_models$tree.x)
 
-for(i in unique(dendrom_curves_models$tree)){
-  pos <- which(dendrom_curves_models$tree == i)
+for(i in unique(dendrom_curves_models$tree.x)){
+  pos <- which(dendrom_curves_models$tree.x == i)
   initials_weibull[[i]]  <- tryCatch(getInitial(min_max_norm ~ SSweibull(steps, Asym, Drop, lrc, pwr),
                                                 data = dendrom_curves_models[pos,]), 
                                      error = function(e) paste("error"))
@@ -134,7 +120,7 @@ replace_par <- which(initials_weibull != "error")[1]
 initials_weibull <- replace(initials_weibull, errors, initials_weibull[replace_par])
 
 
-dendrom_curves_models_w <- dendrom_curves_models %>% group_by(tree) %>% nest()  %>%
+dendrom_curves_models_w <- dendrom_curves_models %>% group_by(tree.x) %>% nest()  %>%
   mutate(weibull = map2(.y = .$data, .x = initials_weibull,  ~ nls(weibull_formula, data = .y, start = unlist(.x))), 
          tidied_weibull = map(weibull, tidy), weibull_fitted  = map(weibull, augment)) %>%
   unnest(weibull_fitted)
@@ -142,35 +128,35 @@ dendrom_curves_models_w <- dendrom_curves_models %>% group_by(tree) %>% nest()  
 ### Putting both model and Raw Measurements together
 
 dendrom_curves_models_fertig <- bind_cols(dendrom_curves_models_w, dendrom_curves_models_g, dendrom_curves_models[, c("Dendrometer", "sri", "step_locator")]) %>%
-  select(tree, min_max_norm, steps, "weibull_fit" = .fitted, 
+  select(tree.x, min_max_norm, steps, "weibull_fit" = .fitted, 
          "weibull_res" = .resid, "gompertz_fit"= .fitted1, 
          "gompertz_res" = .resid1, "raw_data" = Dendrometer, 
          "SRI" = sri, step_locator)
 
-pos_steps <- match(dendrom_curves_models_fertig$steps,dendrom_curves_models$steps) ## getting back the tiempo column, get matching positions with orignal table
+pos_steps <- match(dendrom_curves_models_fertig$step_locator,dendrom_curves_models$step_locator) ## getting back the tiempo column, get matching positions with orignal table
 
 dendrom_curves_models_fertig[,"tiempo"] <- as.vector(dendrom_curves_models[pos_steps, "tiempo"]) ### put them back carefully (tibbles are messy)
 
 ### Joining Photograph info and data for Points in graph
 
-pos <- match(dendrom_curves_models_fertig$step_locator,dendrom_curves$step_locator)
-
-dendrom_curves_models_fertig <- bind_cols(dendrom_curves_models_fertig, dendrom_curves[pos, c("date", "file", "x_images", "y_value_points_norm", "y_value_points_sri", "y_value_points_sri")])
+dendrom_curves_models_fertig <- left_join(dendrom_curves_models_fertig, dendrom_curves[, c("step_locator", "date", "file", "x_images", "y_value_points_norm", "y_value_points_sri")], by = "step_locator")
 
 rm(nls_rcg, dendrom_curves, pos_steps, gompertz_initials, min_max_norm, dendrom_curves_models, dendrom_curves_models_g, dendrom_curves_models_w, 
    initials_weibull, errors, gompertz_formula, i, pos, replace_par, weibull_formula)
 
+###
 ### Getting Growth phenology
 
 
-growth_phen_gompertz <- growth_phenology_calc(dendrom_curves_models_fertig, group_by_var = tree, fitted_col = gompertz_fit)
+growth_phen_gompertz <- growth_phenology_calc(dendrom_curves_models_fertig, group_by_var = tree.x, fitted_col = gompertz_fit)
 
-growth_phen_weibull <- growth_phenology_calc(dendrom_curves_models_fertig, group_by_var = tree, fitted_col = weibull_fit)
+growth_phen_weibull <- growth_phenology_calc(dendrom_curves_models_fertig, group_by_var = tree.x, fitted_col = weibull_fit)
 
-growth_phen_change <- growth_phenology_calc(dendrom_curves_models_fertig, group_by_var = tree, fitted_col = SRI)
+growth_phen_change <- growth_phenology_calc(dendrom_curves_models_fertig, group_by_var = tree.x, fitted_col = SRI)
 
 rm(growth_phenology_calc)
 
+####
 
 
 # Define UI ----
@@ -236,33 +222,31 @@ server <- function(input, output) {
     date_end <- input$date[2]
     
     if(input$radio == T){
-      plot_true <- dendrom_curves_models_fertig %>% filter(tree %in% tree_of_choice, tiempo >= date_begin & tiempo <= date_end) %>%
-        ggplot(aes(color = tree)) + geom_line(aes(x = tiempo, y = min_max_norm)) +
-        geom_point(aes(x = x_images, y = y_value_points_norm, colour = tree), 
-                   size = 4, alpha = 0.75)+
-        geom_vline(data = growth_phen_weibull %>% filter(tree %in% tree_of_choice), aes(xintercept = date_onset, color = tree)) +
-        geom_vline(data = growth_phen_weibull %>% filter(tree %in% tree_of_choice), aes(xintercept = date_cessation, color = tree))+
-       # scale_x_datetime(breaks = date, labels = date) +
+      plot_true <- dendrom_curves_models_fertig %>% filter(tree.x %in% tree_of_choice, tiempo >= date_begin & tiempo <= date_end) %>%
+        ggplot(aes(color = tree.x, group = tree.x)) + geom_line(aes(x = tiempo, y = min_max_norm)) +
+        geom_point(aes(x = x_images, y = y_value_points_norm))+
+        geom_vline(data = growth_phen_weibull %>% filter(tree.x %in% tree_of_choice), aes(xintercept = date_onset, color = tree.x)) +
+        geom_vline(data = growth_phen_weibull %>% filter(tree.x %in% tree_of_choice), aes(xintercept = date_cessation, color = tree.x))+
+        # scale_x_datetime(breaks = date, labels = date) +
         theme(panel.background = element_rect(fill = "white", color = "black"), 
               axis.text.x = element_text(angle = 90, hjust = 1)) 
       if(input$weibull == TRUE){
-        plot_true <- plot_true + geom_line(aes(x = tiempo, y = weibull_fit, group = tree), color = "black", alpha = 0.7, data = dendrom_curves_models_fertig %>%
-                                             filter(tree %in% tree_of_choice, tiempo >= date_begin & tiempo <= date_end)) 
+        plot_true <- plot_true + geom_line(aes(x = tiempo, y = weibull_fit, group = tree.x), color = "black", alpha = 0.75, data = dendrom_curves_models_fertig %>%
+                                             filter(tree.x %in% tree_of_choice, tiempo >= date_begin & tiempo <= date_end)) 
       } else {
         plot_true
       }
       plot_true
       
     } else {
-      plot_false <- dendrom_curves_models_fertig %>% filter(tree %in% tree_of_choice, tiempo >= date_begin & tiempo <= date_end) %>%
-        ggplot(aes(color = tree)) + geom_line(aes(x = tiempo, y = min_max_norm)) + 
-        geom_point(aes(x = x_images, y = y_value_points_norm, colour = tree), 
-                   size = 4, alpha = 0.75) + #scale_x_datetime(breaks = date, labels = date) +
+      plot_false <- dendrom_curves_models_fertig %>% filter(tree.x %in% tree_of_choice, tiempo >= date_begin & tiempo <= date_end) %>%
+        ggplot(aes(color = tree.x, group = tree.x)) + geom_line(aes(x = tiempo, y = min_max_norm)) + 
+        geom_point(aes(x = x_images, y = y_value_points_norm)) + #scale_x_datetime(breaks = date, labels = date) +
         theme(panel.background = element_rect(fill = "white", color = "black"), 
               axis.text.x = element_text(angle = 90, hjust = 1))
       if (input$weibull == TRUE){
-        plot_false <- plot_false + geom_line(aes(x = tiempo, y = weibull_fit, group = tree), color = "black", alpha = 0.7, data = dendrom_curves_models_fertig %>%
-                                               filter(tree %in% tree_of_choice, tiempo >= date_begin & tiempo <= date_end)) 
+        plot_false <- plot_false + geom_line(aes(x = tiempo, y = weibull_fit, group = tree.x), color = "black", alpha = 0.7, data = dendrom_curves_models_fertig %>%
+                                               filter(tree.x %in% tree_of_choice, tiempo >= date_begin & tiempo <= date_end)) 
       } else {
         plot_false
       }
@@ -277,7 +261,7 @@ server <- function(input, output) {
     # With base graphics, need to tell it what the x and y variables are.
     if(input$image_anot != TRUE){
       filename <- normalizePath(file.path('./images',
-                                          as.character(unique(na.omit(nearPoints(dendrom_curves_models_fertig %>% filter(tree %in% tree_of_choice),
+                                          as.character(unique(na.omit(nearPoints(dendrom_curves_models_fertig %>% filter(tree.x %in% tree_of_choice),
                                                                                  input$plot_click, xvar = "x_images", yvar = "y_value_points_norm", 
                                                                                  threshold = 3000000, maxpoints = 2, addDist = T)[,13])[1])[1])))
       filename <- na.omit(filename)[[1]]
@@ -289,7 +273,7 @@ server <- function(input, output) {
            alt = "Image file")
     } else {
       filename <- normalizePath(file.path( './Annot_Images',
-                                           as.character(unique(na.omit(nearPoints(dendrom_curves_models_fertig %>% filter(tree %in% tree_of_choice),
+                                           as.character(unique(na.omit(nearPoints(dendrom_curves_models_fertig %>% filter(tree.x %in% tree_of_choice),
                                                                                   input$plot_click, xvar = "x_images", yvar = "y_value_points_norm", 
                                                                                   threshold = 3000000, maxpoints = 2, addDist = T)[,13])[1])[1])))
       filename <- na.omit(filename)[[1]]
@@ -307,7 +291,7 @@ server <- function(input, output) {
     tree_of_choice <- input$tree
     # With base graphics, need to tell it what the x and y variables are.
     filename <- normalizePath(file.path('./images',
-                                        as.character(unique(na.omit(nearPoints(dendrom_curves_models_fertig %>% filter(tree %in% tree_of_choice),
+                                        as.character(unique(na.omit(nearPoints(dendrom_curves_models_fertig %>% filter(tree.x %in% tree_of_choice),
                                                                                input$plot_click, xvar = "x_images", yvar = "y_value_points_norm", 
                                                                                threshold = 3000000, maxpoints = 2, addDist = T)[,13])[1])[1])))
     #substr(filename, nchar(filename)-21, nchar(filename))
