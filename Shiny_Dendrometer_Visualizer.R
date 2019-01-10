@@ -1,11 +1,14 @@
 ### Shiny Dendrometer curves app!
 
-#install.packages("shiny")
+
+#install.packages("shinydashboard")
+library(shinydashboard)
 library(shiny)
 library(tidyverse)
 library(broom)
 library(lubridate)
 source("auxiliary_functions.R", local = T)
+
 ###
 
 ### Load data
@@ -16,9 +19,7 @@ dendrom_curves <- dendrom_curves %>% mutate(step_locator = seq_along(tiempo))
 
 dendrom_curves <- dendrom_curves %>% select(tiempo, Dendrometer, tree, step_locator) %>% na.omit() %>% 
   group_by(tree) %>% mutate(min_max_norm = min_max_norm(Dendrometer), 
-                            sri = Dendrometer - min(Dendrometer)) %>% 
-  ungroup() 
-
+                            sri = Dendrometer - min(Dendrometer)) %>% ungroup() 
 
 ### Bind Image Data and Dendrometer Data
 
@@ -27,7 +28,6 @@ image_dates <- read_csv("Microcore_sampling_dates.csv")
 image_dates <- image_dates %>% gather(key = "date", value = "image",  -Baum, -ID_RCG) %>% unite("tree", Baum, ID_RCG, sep = "")
 
 image_dates$date <- as.POSIXct(image_dates$date, format = "%d.%m.%y", tz = "UTC")
-
 
 ### Bind with DendrometerData
 
@@ -38,19 +38,16 @@ days_wimage <- image_dates %>% filter(!is.na(image))
 rm(image_dates)
 
 ### Add a column to the dataframe with the path or name of the image file for the date!
+###
 
 ### Load image files, or names at least 
 
 bilder <- list.files("./images")
 
-
 ### you create a list of the files
-
-##then you compare which trees match (substr) and which dates (complex posixct and substr)
+### then you compare which trees match (substr) and which dates (complex posixct and substr)
 ### wrap around which and you have the rows where the files are supposed to go!
 
-#step_1 <- substr(bilder, 1, 5) %>% str_replace_all("_", "") %>% 
-# str_replace("1", "A") %>% str_replace("2", "B") %>% str_replace("3", "C")
 step_1 <- substr(bilder, 1, 4)
 
 step_2 <- as.POSIXct(substr(bilder, 6, nchar(bilder)-8), format = "%d%m%Y", tz = "UTC")
@@ -76,26 +73,20 @@ point_dates <- dendrom_curves$date[!is.na(dendrom_curves$file)]### get the dates
 
 row_with_date <- which(!is.na(dendrom_curves$file))## get the row positions
 
-length(point_dates);length(row_with_date)### same length
-
 dendrom_curves[row_with_date, "x_images"] <- as.POSIXct(point_dates, format = "%Y-%m-%d", tz = "UTC")### save it as character
 
 dendrom_curves$x_images <- as.POSIXct(dendrom_curves$x_images, origin = "1970-01-01")
 
-
 ### Add a clear Y value for points with image
 
-y_values <- dendrom_curves %>% group_by(tree, file) %>% summarize(y_value_points_raw  = mean(Dendrometer, na.rm = T), 
-                                                                  y_value_points_norm  = mean(min_max_norm, na.rm = T), 
-                                                                  y_value_points_sri  = mean(sri, na.rm = T)) %>%  filter(file != "NA")
-
+y_values <- dendrom_curves %>% filter(file != "NA") %>% group_by(tree, file) %>% summarize(y_value_points_raw  = mean(Dendrometer, na.rm = T), 
+                                                                                           y_value_points_norm  = mean(min_max_norm, na.rm = T), 
+                                                                                           y_value_points_sri  = mean(sri, na.rm = T))  
 
 dendrom_curves <- left_join(dendrom_curves, y_values, by = "file")
 ### after here is tree.x
 
 rm(point_dates, row_with_date, file_wimage, y_values)
-
-
 
 ### Prepare data, modelling
 
@@ -106,6 +97,7 @@ dendrom_curves_models <- dendrom_curves %>% select(tiempo, Dendrometer, tree.x,
 ### and add a "steps" column for each tree, to model in base of that instead of the POSIXct data
 
 ### Gompertz Models
+### nls_rcg and gompertz_formula are coded in "auxiliary_functions.R" file
 
 dendrom_curves_models_g <- dendrom_curves_models %>% group_by(tree.x) %>% nest() %>%
   mutate(gompertz = map(data, ~ nls_rcg(.)), tidied_gompertz = map(gompertz, tidy), gompertz_fitted  = map(gompertz, augment)) %>%
@@ -113,8 +105,7 @@ dendrom_curves_models_g <- dendrom_curves_models %>% group_by(tree.x) %>% nest()
 
 ### Weibull
 
-
-### Primero get initials pa todos
+### Getting Weibull initials
 
 initials_weibull <- vector(mode = "list", length = length(unique(dendrom_curves_models$tree.x)))
 names(initials_weibull) <- unique(dendrom_curves_models$tree.x)
@@ -138,7 +129,7 @@ dendrom_curves_models_w <- dendrom_curves_models %>% group_by(tree.x) %>% nest()
          tidied_weibull = map(weibull, tidy), weibull_fitted  = map(weibull, augment)) %>%
   unnest(weibull_fitted)
 
-### Putting both model and Raw Measurements together
+### Putting both model and raw measurements together
 
 dendrom_curves_models_fertig <- bind_cols(dendrom_curves_models_w, dendrom_curves_models_g, dendrom_curves_models[, c("Dendrometer", "sri", "step_locator")]) %>%
   select(tree.x, min_max_norm, steps, "weibull_fit" = .fitted, 
@@ -146,19 +137,18 @@ dendrom_curves_models_fertig <- bind_cols(dendrom_curves_models_w, dendrom_curve
          "gompertz_res" = .resid1, "raw_data" = Dendrometer, 
          "SRI" = sri, step_locator)
 
-pos_steps <- match(dendrom_curves_models_fertig$steps,dendrom_curves_models$steps) ## getting back the tiempo column, get matching positions with orignal table
+pos_steps <- match(dendrom_curves_models_fertig$step_locator,dendrom_curves_models$step_locator) ## getting back the tiempo column, get matching positions with orignal table
 
 dendrom_curves_models_fertig[,"tiempo"] <- as.vector(dendrom_curves_models[pos_steps, "tiempo"]) ### put them back carefully (tibbles are messy)
 
 ### Joining Photograph info and data for Points in graph
 
-pos <- match(dendrom_curves_models_fertig$step_locator,dendrom_curves$step_locator)
-
-dendrom_curves_models_fertig <- bind_cols(dendrom_curves_models_fertig, dendrom_curves[pos, c("date", "file", "x_images", "y_value_points_norm", "y_value_points_sri", "y_value_points_sri")])
+dendrom_curves_models_fertig <- left_join(dendrom_curves_models_fertig, dendrom_curves[, c("step_locator", "date", "file", "x_images", "y_value_points_norm", "y_value_points_sri")], by = "step_locator")
 
 rm(nls_rcg, dendrom_curves, pos_steps, gompertz_initials, min_max_norm, dendrom_curves_models, dendrom_curves_models_g, dendrom_curves_models_w, 
    initials_weibull, errors, gompertz_formula, i, pos, replace_par, weibull_formula)
 
+###
 ### Getting Growth phenology
 
 
@@ -170,57 +160,114 @@ growth_phen_change <- growth_phenology_calc(dendrom_curves_models_fertig, group_
 
 rm(growth_phenology_calc)
 
+####
 
+ui <- dashboardPage(
+  dashboardHeader(title = "Dendrometer Visualizer"),
+  dashboardSidebar(
+    sidebarMenu(
+      menuItem("Dendro/Thinsection\nViewer", tabName = "dendro", icon = icon("dashboard")), 
+      menuItem("Phenology Comparison", tabName = "pheno", icon = icon("th"))
+    )
+  ),
+  dashboardBody(
+    fluidRow(
+      box(solidHeader = T, width = 12, plotOutput(outputId = "dendro_curve", click = clickOpts(id = "plot_click")), 
+          status = "primary")
+    ),
+    fluidRow(
+      box(solidHeader = T, width = 4, title = "Image", imageOutput("image", height = "400"), 
+          textOutput("name_image"), 
+        height = 500, 
+        status = "primary"), 
+      tabBox(width = 4, 
+             title = "Controls",
+             side = "right",
+             height = 500,
+             tabPanel("Tree/Date", wellPanel(
+               h5("Select a tree"), 
+               checkboxGroupInput(inputId = "tree", 
+                                  label = NULL,
+                                  choices = list("FSY A" = "FSYA", 
+                                                 "FSY B" = "FSYB", 
+                                                 "FSY C" = "FSYC", 
+                                                 "QRO A" = "QROA", 
+                                                 "QRO B" = "QROB", 
+                                                 "QRO C" = "QROC", 
+                                                 "APS A" = "APSA", 
+                                                 "APS B" = "APSB"), 
+                                  selected = "FSYA")), 
+               wellPanel(dateRangeInput("date", 
+                                        label = "Choose a date range within 2016", 
+                                        start = "2016-03-01", end = "2016-09-30", 
+                                        min = "2016-03-01", max = "2016-09-30" ))), 
+             tabPanel("Phenology/Models/Anot", wellPanel(checkboxGroupInput("pheno",
+                                                           label = "Show derived phenology?", 
+                                                           choices = list("Weibull" = "weibull_pheno", "Gompertz" = "gompertz_pheno", "Raw" = "raw_pheno"), 
+                                                           selected = "Weibull")),
+                      wellPanel(checkboxGroupInput("models", "Select a model fit:", 
+                                                   choices = list("Weibull" = "weibull", "Gompertz" = "gompertz"), selected = NULL)),
+                      wellPanel(radioButtons("image_anot",
+                                             label = "Show annotated image?", 
+                                             choices = list("Yes" = TRUE, "No" = FALSE), selected = FALSE)))), 
+      box(width = 4, title = "Info", solidHeader = T,
+          status = "warning", 
+          p("This app helps visualize Dendrometer Data and Microcoring from the same tree/time period. On the middle panel you can control the options to display (by choosing between 
+              the tabs) and below you can see the Dendrometer graph. If you click on the points on the graph,
+            you can see a thin-section of the wood on that sampling date and compare it to derived phenology."),
+          br(), 
+          div(h3(strong("Click on the dots to see the corresponding thin-section!"), style = "color:blue")))
+           )
+    )
+  )
 
 # Define UI ----
-ui <- fluidPage(
-  
-  titlePanel(h1(strong("Dendrometer Visualizer"))),
-  
-  hr(),
-  
-  fluidRow(
-    
-    column(1, wellPanel(
-      h5("Select a tree"), 
-      checkboxGroupInput(inputId = "tree", 
-                         label = NULL,
-                         choices = list("FSY A" = "FSYA", 
-                                        "FSY B" = "FSYB", 
-                                        "FSY C" = "FSYC", 
-                                        "QRO A" = "QROA", 
-                                        "QRO B" = "QROB", 
-                                        "QRO C" = "QROC", 
-                                        "APS A" = "APSA", 
-                                        "APS B" = "APSB"), 
-                         selected = "FSYA"))),
-    column(2, wellPanel(dateRangeInput("date", 
-                                       label = "Choose a date range within 2016", 
-                                       start = "2016-03-01", end = "2016-09-30", 
-                                       min = "2016-03-01", max = "2016-09-30" )), 
-           wellPanel(radioButtons("radio",
-                                  label = "Show derived phenology?", 
-                                  choices = list("Yes" = TRUE, "No" = FALSE))),
-           wellPanel(radioButtons("image_anot",
-                                  label = "Show annotated image?", 
-                                  choices = list("Yes" = TRUE, "No" = FALSE), selected = FALSE))
-    ),
-    column(2, wellPanel(radioButtons("weibull", label = "Show Weibull fit?", 
-                                     choices = list("Yes" = TRUE, "No" = FALSE), selected = FALSE))),
-    
-    column(3, imageOutput("image", height = "500px"), 
-           textOutput("name_image")), 
-    column(2, p("This app helps visualize Dendrometer Data and Microcoring from the same tree/time period. On the left you can control the options to Display and below you can see the Dendro
-                meter graph. If you click on the points on the graph, you can see a thin-section of the wood on that sampling date and compare it to derived phenology."),
-           br(), 
-           div(h3(strong("Click on the dots to see the corresponding thin-section!"), style = "color:blue")),
-           offset = 1)
-    ),
-  
-  hr(),
-  
-  plotOutput(outputId = "dendro_curve", click = clickOpts(id = "plot_click"))
-)
+# ui <- fluidPage(
+#   
+#   fluidRow(
+#     
+#     
+#     column(1, wellPanel(
+#       h5("Select a tree"), 
+#       checkboxGroupInput(inputId = "tree", 
+#                          label = NULL,
+#                          choices = list("FSY A" = "FSYA", 
+#                                         "FSY B" = "FSYB", 
+#                                         "FSY C" = "FSYC", 
+#                                         "QRO A" = "QROA", 
+#                                         "QRO B" = "QROB", 
+#                                         "QRO C" = "QROC", 
+#                                         "APS A" = "APSA", 
+#                                         "APS B" = "APSB"), 
+#                          selected = "FSYA"))),
+#     column(2, wellPanel(dateRangeInput("date", 
+#                                        label = "Choose a date range within 2016", 
+#                                        start = "2016-03-01", end = "2016-09-30", 
+#                                        min = "2016-03-01", max = "2016-09-30" )), 
+#            wellPanel(checkboxGroupInput("pheno",
+#                                         label = "Show derived phenology?", 
+#                                         choices = list("Weibull" = "weibull_pheno", "Gompertz" = "gompertz_pheno", "Raw" = "raw_pheno"), 
+#                                         selected = "Weibull")),
+#            wellPanel(radioButtons("image_anot",
+#                                   label = "Show annotated image?", 
+#                                   choices = list("Yes" = TRUE, "No" = FALSE), selected = FALSE))),
+#     column(2, wellPanel(checkboxGroupInput("models", "Select a model fit:", 
+#                                            choices = list("Weibull" = "weibull", 
+#                                                           "Gompertz" = "gompertz"), selected = NULL))),
+#     
+#     column(3, imageOutput("image", height = "500px"), 
+#            textOutput("name_image")), 
+#     column(2, p("This app helps visualize Dendrometer Data and Microcoring from the same tree/time period. On the left you can control the options to display and below you can see the 
+#                 Dendrometer graph. If you click on the points on the graph, you can see a thin-section of the wood on that sampling date and compare it to derived phenology."),
+#            br(), 
+#            div(h3(strong("Click on the dots to see the corresponding thin-section!"), style = "color:blue")),
+#            offset = 1)
+#     ),
+#   
+#   hr(),
+#   
+#   plotOutput(outputId = "dendro_curve", click = clickOpts(id = "plot_click"))
+# )
 
 
 
@@ -231,45 +278,58 @@ server <- function(input, output) {
     
     tree_of_choice <- input$tree
     
-    date_begin <- input$date[1]
+    date_begin <-input$date[1]
     date_end <- input$date[2]
     
-    if(input$radio == T){
-      plot_true <- dendrom_curves_models_fertig %>% filter(tree.x %in% tree_of_choice, tiempo >= date_begin & tiempo <= date_end) %>%
-        ggplot(aes(color = tree.x)) + geom_line(aes(x = tiempo, y = min_max_norm)) +
-        geom_point(aes(x = x_images, y = y_value_points_norm, colour = tree.x), 
-                   size = 4, alpha = 0.75)+
-        geom_vline(data = growth_phen_weibull %>% filter(tree.x %in% tree_of_choice), aes(xintercept = date_onset, color = tree.x)) +
-        geom_vline(data = growth_phen_weibull %>% filter(tree.x %in% tree_of_choice), aes(xintercept = date_cessation, color = tree.x))+
-        # scale_x_datetime(breaks = date, labels = date) +
-        theme(panel.background = element_rect(fill = "white", color = "black"), 
-              axis.text.x = element_text(angle = 90, hjust = 1)) 
-      if(input$weibull == TRUE){
-        plot_true <- plot_true + geom_line(aes(x = tiempo, y = weibull_fit, group = tree.x), color = "black", alpha = 0.7, data = dendrom_curves_models_fertig %>%
-                                             filter(tree.x %in% tree_of_choice, tiempo >= date_begin & tiempo <= date_end)) 
-      } else {
-        plot_true
-      }
-      plot_true
-      
+    
+    
+    plot_plain <- dendrom_curves_models_fertig %>% filter(tree.x %in% tree_of_choice, tiempo >= date_begin & tiempo <= date_end) %>%
+      ggplot(aes(color = tree.x, group = tree.x)) + theme(panel.background = element_rect(fill = "white", color = "black"), 
+                                                          axis.text.x = element_text(angle = 90, hjust = 1), 
+                                                          text = element_text(size = 20)) + labs(color = "Tree")+
+      geom_line(aes(x = tiempo, y = min_max_norm)) + geom_point(aes(x = x_images, y = y_value_points_norm), size = 4, alpha = 0.75) + xlab("Time") + 
+      ylab("Min-Max Normalized\nStem Radial Increment") + scale_x_datetime(date_breaks = "2 weeks", date_labels = "%b/%d")
+    
+    
+    weibull_pheno_1 <- geom_vline(data = growth_phen_weibull %>% filter(tree.x %in% tree_of_choice), aes(xintercept = date_onset, color = tree.x), 
+                                  linetype = 1) 
+    weibull_pheno_2 <- geom_vline(data = growth_phen_weibull %>% filter(tree.x %in% tree_of_choice), aes(xintercept = date_cessation, color = tree.x), 
+                                  linetype = 1)  
+    
+    gompertz_pheno_1 <- geom_vline(data = growth_phen_gompertz %>% filter(tree.x %in% tree_of_choice), aes(xintercept = date_onset, color = tree.x), 
+                                   linetype = 2) 
+    gompertz_pheno_2 <- geom_vline(data = growth_phen_gompertz %>% filter(tree.x %in% tree_of_choice), aes(xintercept = date_cessation, color = tree.x), 
+                                   linetype = 2) 
+    
+    raw_pheno_1 <- geom_vline(data = growth_phen_change %>% filter(tree.x %in% tree_of_choice), aes(xintercept = date_onset, color = tree.x), 
+                              linetype = 3) 
+    raw_pheno_2 <- geom_vline(data = growth_phen_change %>% filter(tree.x %in% tree_of_choice), aes(xintercept = date_cessation, color = tree.x), 
+                              linetype = 3) 
+    
+    pheno_layers <- list("weibull_pheno" = c(weibull_pheno_1, weibull_pheno_2), "gompertz_pheno" = c(gompertz_pheno_1, gompertz_pheno_2), "raw_pheno" = c(raw_pheno_1, raw_pheno_2))
+    
+    
+    if(is.null(input$pheno)){
+      plot_plain
     } else {
-      plot_false <- dendrom_curves_models_fertig %>% filter(tree.x %in% tree_of_choice, tiempo >= date_begin & tiempo <= date_end) %>%
-        ggplot(aes(color = tree.x)) + geom_line(aes(x = tiempo, y = min_max_norm)) + 
-        geom_point(aes(x = x_images, y = y_value_points_norm, colour = tree.x), 
-                   size = 4, alpha = 0.75) + #scale_x_datetime(breaks = date, labels = date) +
-        theme(panel.background = element_rect(fill = "white", color = "black"), 
-              axis.text.x = element_text(angle = 90, hjust = 1))
-      if (input$weibull == TRUE){
-        plot_false <- plot_false + geom_line(aes(x = tiempo, y = weibull_fit, group = tree.x), color = "black", alpha = 0.7, data = dendrom_curves_models_fertig %>%
-                                               filter(tree.x %in% tree_of_choice, tiempo >= date_begin & tiempo <= date_end)) 
-      } else {
-        plot_false
-      }
+      plot_plain <- plot_plain + pheno_layers[input$pheno]
+      plot_plain 
+    }
+    
+    
+    if(is.null(input$models)){
+      plot_plain
+    } else {
+      weibull <- geom_line(aes(x = tiempo, y = weibull_fit, group = tree.x), color = "black", alpha = 0.7, data = dendrom_curves_models_fertig %>%
+                             filter(tree.x %in% tree_of_choice, tiempo >= date_begin & tiempo <= date_end)) 
+      gompertz <- geom_line(aes(x = tiempo, y = gompertz_fit, group = tree.x), color = "red", alpha = 0.7, data = dendrom_curves_models_fertig %>%
+                              filter(tree.x %in% tree_of_choice, tiempo >= date_begin & tiempo <= date_end)) 
+      models <- c("weibull" = weibull, "gompertz" = gompertz)
       
-      plot_false}
-    
-    
+      plot_plain + models[input$models]
+    }
   })
+  
   
   output$image <- renderImage({
     tree_of_choice <- input$tree
