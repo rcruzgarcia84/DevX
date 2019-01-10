@@ -6,6 +6,8 @@ library(broom)
 library(lubridate)
 source("auxiliary_functions.R", local = T)
 
+###
+
 ### Load data
 
 dendrom_curves <- read_csv("dendro_curves.csv")
@@ -161,7 +163,7 @@ rm(growth_phenology_calc)
 # Define UI ----
 ui <- fluidPage(
   
-  titlePanel(h1(strong("Dendrometer Visualizer"))),
+  titlePanel("Dendrometer Visualizer"),
   
   hr(),
   
@@ -228,7 +230,7 @@ server <- function(input, output) {
                                                             axis.text.x = element_text(angle = 90, hjust = 1), 
                                                             text = element_text(size = 20)) + labs(color = "Tree")+
         geom_line(aes(x = tiempo, y = min_max_norm)) + geom_point(aes(x = x_images, y = y_value_points_norm), size = 4, alpha = 0.75) + xlab("Time") + 
-        ylab("Min-Max Normalized\nStem Radial Increment") 
+        ylab("Min-Max Normalized\nStem Radial Increment") + scale_x_datetime(date_breaks = "2 weeks", date_labels = "%b/%d")
       
       
             weibull_pheno_1 <- geom_vline(data = growth_phen_weibull %>% filter(tree.x %in% tree_of_choice), aes(xintercept = date_onset, color = tree.x), 
