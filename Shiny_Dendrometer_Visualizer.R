@@ -158,19 +158,24 @@ growth_phen_weibull <- growth_phenology_calc(dendrom_curves_models_fertig, group
 
 growth_phen_change <- growth_phenology_calc(dendrom_curves_models_fertig, group_by_var = tree.x, fitted_col = SRI)
 
+
+
 rm(growth_phenology_calc)
 
 ####
 
 ui <- dashboardPage(
-  dashboardHeader(title = "Dendrometer Visualizer"),
+  dashboardHeader(title = "Dendro Viewer"),
   dashboardSidebar(
     sidebarMenu(
-      menuItem("Dendro/Thinsection\nViewer", tabName = "dendro", icon = icon("dashboard")), 
-      menuItem("Phenology Comparison", tabName = "pheno", icon = icon("th"))
+      menuItem("Dendro/Thinsection\nViewer", tabName = "dendro", icon = icon("area-chart")), 
+      menuItem("Phenology Comparison", tabName = "pheno", icon = icon("envira"))
     )
   ),
+  
   dashboardBody(
+    tabItems(
+      tabItem("dendro",
     fluidRow(
       box(solidHeader = T, width = 12, plotOutput(outputId = "dendro_curve", click = clickOpts(id = "plot_click")), 
           status = "primary")
@@ -178,8 +183,8 @@ ui <- dashboardPage(
     fluidRow(
       box(solidHeader = T, width = 4, title = "Image", imageOutput("image", height = "400"), 
           textOutput("name_image"), 
-        height = 500, 
-        status = "primary"), 
+          height = 500, 
+          status = "primary"), 
       tabBox(width = 4, 
              title = "Controls",
              side = "right",
@@ -202,9 +207,9 @@ ui <- dashboardPage(
                                         start = "2016-03-01", end = "2016-09-30", 
                                         min = "2016-03-01", max = "2016-09-30" ))), 
              tabPanel("Phenology/Models/Anot", wellPanel(checkboxGroupInput("pheno",
-                                                           label = "Show derived phenology?", 
-                                                           choices = list("Weibull" = "weibull_pheno", "Gompertz" = "gompertz_pheno", "Raw" = "raw_pheno"), 
-                                                           selected = "Weibull")),
+                                                                            label = "Show derived phenology?", 
+                                                                            choices = list("Weibull" = "weibull_pheno", "Gompertz" = "gompertz_pheno", "Raw" = "raw_pheno"), 
+                                                                            selected = "Weibull")),
                       wellPanel(checkboxGroupInput("models", "Select a model fit:", 
                                                    choices = list("Weibull" = "weibull", "Gompertz" = "gompertz"), selected = NULL)),
                       wellPanel(radioButtons("image_anot",
@@ -213,61 +218,34 @@ ui <- dashboardPage(
       box(width = 4, title = "Info", solidHeader = T,
           status = "warning", 
           p("This app helps visualize Dendrometer Data and Microcoring from the same tree/time period. On the middle panel you can control the options to display (by choosing between 
-              the tabs) and below you can see the Dendrometer graph. If you click on the points on the graph,
+            the tabs) and below you can see the Dendrometer graph. If you click on the points on the graph,
             you can see a thin-section of the wood on that sampling date and compare it to derived phenology."),
           br(), 
           div(h3(strong("Click on the dots to see the corresponding thin-section!"), style = "color:blue")))
-           )
     )
+    ), 
+    tabItem("pheno", 
+            fluidRow(
+              box(width = 2, 
+                  title = "Derived Phenology", 
+                  solidHeader = T, 
+                  status = "primary",
+                  wellPanel(radioButtons("pheno_comparison", 
+                                            label = "Choose Phenology\nestimation method", 
+                                            choices = list("Weibull" = "weibull", "Gompertz" = "gompertz", "Raw" = "raw"), 
+                                            selected = "weibull")
+                            )
+                  ), 
+              box(width = 8, 
+                  height = 500,
+                  title = "Compared Phenology", 
+                  solidHeader = T, 
+                  status = "primary", 
+                  plotOutput(outputId = "derived_phenology"))
+              )
+            )
+    ))
   )
-
-# Define UI ----
-# ui <- fluidPage(
-#   
-#   fluidRow(
-#     
-#     
-#     column(1, wellPanel(
-#       h5("Select a tree"), 
-#       checkboxGroupInput(inputId = "tree", 
-#                          label = NULL,
-#                          choices = list("FSY A" = "FSYA", 
-#                                         "FSY B" = "FSYB", 
-#                                         "FSY C" = "FSYC", 
-#                                         "QRO A" = "QROA", 
-#                                         "QRO B" = "QROB", 
-#                                         "QRO C" = "QROC", 
-#                                         "APS A" = "APSA", 
-#                                         "APS B" = "APSB"), 
-#                          selected = "FSYA"))),
-#     column(2, wellPanel(dateRangeInput("date", 
-#                                        label = "Choose a date range within 2016", 
-#                                        start = "2016-03-01", end = "2016-09-30", 
-#                                        min = "2016-03-01", max = "2016-09-30" )), 
-#            wellPanel(checkboxGroupInput("pheno",
-#                                         label = "Show derived phenology?", 
-#                                         choices = list("Weibull" = "weibull_pheno", "Gompertz" = "gompertz_pheno", "Raw" = "raw_pheno"), 
-#                                         selected = "Weibull")),
-#            wellPanel(radioButtons("image_anot",
-#                                   label = "Show annotated image?", 
-#                                   choices = list("Yes" = TRUE, "No" = FALSE), selected = FALSE))),
-#     column(2, wellPanel(checkboxGroupInput("models", "Select a model fit:", 
-#                                            choices = list("Weibull" = "weibull", 
-#                                                           "Gompertz" = "gompertz"), selected = NULL))),
-#     
-#     column(3, imageOutput("image", height = "500px"), 
-#            textOutput("name_image")), 
-#     column(2, p("This app helps visualize Dendrometer Data and Microcoring from the same tree/time period. On the left you can control the options to display and below you can see the 
-#                 Dendrometer graph. If you click on the points on the graph, you can see a thin-section of the wood on that sampling date and compare it to derived phenology."),
-#            br(), 
-#            div(h3(strong("Click on the dots to see the corresponding thin-section!"), style = "color:blue")),
-#            offset = 1)
-#     ),
-#   
-#   hr(),
-#   
-#   plotOutput(outputId = "dendro_curve", click = clickOpts(id = "plot_click"))
-# )
 
 
 
@@ -373,8 +351,23 @@ server <- function(input, output) {
     filename
   })
   
+  output$derived_phenology <- renderPlot({
+    
+    derived_pheno <- input$pheno_comparison 
+    
+   phenos <- list("gompertz" = growth_phen_gompertz, "weibull" = growth_phen_weibull, "raw" = growth_phen_change)
+   
+   phenos[[derived_pheno]] %>% select(tree.x, doy_begin, doy_cessation, growth_duration) %>% 
+     mutate(species = as.factor(substr(tree.x, 1,3)))%>% gather(key = "parameter", value = "DOY", -tree.x, -species) %>% 
+     ggplot(aes(x = species, y = DOY, group = parameter)) + geom_point(aes(color = species)) + facet_wrap(~ parameter) + 
+     theme(panel.background = element_rect(fill = "white", color = "black"), 
+           text = element_text(size = 20), strip.background = element_rect(color = "black", fill = "white")) + 
+     labs(color = "Species")
+    
+    
+  })
+  
 }
 
 # Run the app ----
 shinyApp(ui = ui, server = server)
-
