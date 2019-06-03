@@ -182,14 +182,14 @@ ui <- dashboardPage(
                     status = "primary")
               ),
               fluidRow(
-                box(solidHeader = T, width = 4, title = "Image", imageOutput("image", height = "400"), 
+                box(solidHeader = T, width = 4, title = "Image", column(width = 12, imageOutput("image", height = "100%", width = "100%")), 
                     textOutput("name_image"), 
-                    height = 500, 
                     status = "primary"), 
+                    #style = "height:50vh"), 
                 tabBox(width = 4, 
                        title = "Controls",
                        side = "right",
-                       height = 500,
+                       height = "450px",
                        tabPanel("Tree/Date", wellPanel(
                          h5("Select a tree"), 
                          checkboxGroupInput(inputId = "tree", 
@@ -218,8 +218,8 @@ ui <- dashboardPage(
                                                        choices = list("Yes" = TRUE, "No" = FALSE), selected = FALSE)))), 
                 box(width = 4, title = "Info", solidHeader = T,
                     status = "warning", 
-                    p("This app helps visualize Dendrometer Data and Microcoring from the same tree/time period. On the middle panel you can control the options to display (by choosing between 
-                      the tabs) and below you can see the Dendrometer graph. If you click on the points on the graph,
+                    p("This app helps visualize Dendrometer Data and Microcoring from the same tree/time period. On the middle panel you can control the options to display
+                      (by choosing between the tabs) and below you can see the Dendrometer graph. If you click on the points on the graph,
                       you can see a thin-section of the wood on that sampling date and compare it to derived phenology."),
                     br(), 
                     div(h3(strong("Click on the dots to see the corresponding thin-section!"), style = "color:blue")))
@@ -250,7 +250,7 @@ ui <- dashboardPage(
 
 
 
-# Define server logic ----
+# Define server logic
 server <- function(input, output) {
   
   output$dendro_curve <- renderPlot({
@@ -322,8 +322,8 @@ server <- function(input, output) {
       # nearPoints() also works with hover and dblclick events
       list(src = filename,
            contentType = "image/jpg",
-           width = 500,
-           height = 400,
+           width = 350,
+           height = 300,
            alt = "Image file")
     } else {
       filename <- normalizePath(file.path( './Annot_Images',
@@ -334,8 +334,8 @@ server <- function(input, output) {
       # nearPoints() also works with hover and dblclick events
       list(src = filename,
            contentType = "image/jpg",
-           width = 500,
-           height = 400,
+           width = 350,
+           height = 300,
            alt = "Image file")
     }
     
