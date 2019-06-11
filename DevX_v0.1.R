@@ -15,25 +15,26 @@ source("auxiliary_functions.R", local = T)
 
 dendrom_curves <- read_csv("dendro_curves.csv")
 
-dendrom_curves <- dendrom_curves %>% mutate(step_locator = seq_along(tiempo))
+dendrom_curves <- dendrom_curves %>% mutate(step_locator = seq_along(tiempo)) ### Add a continuous variable to aid modelling steps
 
 dendrom_curves <- dendrom_curves %>% select(tiempo, Dendrometer, tree, step_locator) %>% na.omit() %>% 
   group_by(tree) %>% mutate(min_max_norm = min_max_norm(Dendrometer), 
-                            sri = Dendrometer - min(Dendrometer)) %>% ungroup() 
+                            sri = Dendrometer - min(Dendrometer)) %>% ungroup() ### select the required columns, remove NAs, group measurements by tree and 
+### perform the min-max normalization and "sri" for the raw increments, at the end ungroup the data
 
 ### Bind Image Data and Dendrometer Data
 
-image_dates <- read_csv("Microcore_sampling_dates.csv")
+image_dates <- read_csv("Microcore_sampling_dates.csv")### Load file with microcore sampling dates
 
-image_dates <- image_dates %>% gather(key = "date", value = "image",  -Baum, -ID_RCG) %>% unite("tree", Baum, ID_RCG, sep = "")
+image_dates <- image_dates %>% gather(key = "date", value = "image",  -Baum, -ID_RCG) %>% unite("tree", Baum, ID_RCG, sep = "")## convert to long format
 
-image_dates$date <- as.POSIXct(image_dates$date, format = "%d.%m.%y", tz = "UTC")
+image_dates$date <- as.POSIXct(image_dates$date, format = "%d.%m.%y", tz = "UTC") ## change 'date' column to POSIXct data type
 
 ### Bind with DendrometerData
 
 ### Create the day_wimage object
 
-days_wimage <- image_dates %>% filter(!is.na(image)) 
+days_wimage <- image_dates %>% filter(!is.na(image)) ### remove NAs
 
 rm(image_dates)
 
@@ -42,17 +43,19 @@ rm(image_dates)
 
 ### Load image files, or names at least 
 
-bilder <- list.files("./images")
+bilder <- list.files("./images")## Load all file names in the "images" folder
+
+### Matching image names (which contain a date) and dates as in "days_wimage" object
 
 ### you create a list of the files
 ### then you compare which trees match (substr) and which dates (complex posixct and substr)
 ### wrap around which and you have the rows where the files are supposed to go!
 
-step_1 <- substr(bilder, 1, 4)
+step_1 <- substr(bilder, 1, 4)### Part of string in my image file name containing the tree name
 
-step_2 <- as.POSIXct(substr(bilder, 6, nchar(bilder)-8), format = "%d%m%Y", tz = "UTC")
+step_2 <- as.POSIXct(substr(bilder, 6, nchar(bilder)-8), format = "%d%m%Y", tz = "UTC") ### Part of string in my image file name containing the corresponding date (of microcore sampling)
 
-pos_bilder <- match(paste(step_1, step_2), paste(days_wimage$tree, days_wimage$date))
+pos_bilder <- match(paste(step_1, step_2), paste(days_wimage$tree, days_wimage$date)) ### We find the matching values in "days_wimage" object
 
 days_wimage[pos_bilder, "file"] <- bilder ### place the filenames in the right position
 
@@ -60,9 +63,9 @@ rm(bilder, pos_bilder, step_1, step_2)
 
 file_wimage <- days_wimage %>% select(tree, date, file) %>% mutate(dates = as.Date(date))### extract only important columns
 
-colnames(file_wimage) <- c("tree", "date_posixct", "file", "date")
+colnames(file_wimage) <- c("tree", "date_posixct", "file", "date") ## rename the clumns
 
-dendrom_curves$date <- as.Date(dendrom_curves$tiempo)
+dendrom_curves$date <- as.Date(dendrom_curves$tiempo) ### add a column with date variable type
 
 dendrom_curves <- left_join(dendrom_curves, file_wimage, by = c("tree", "date")) ### left joining the dataframes
 
@@ -75,9 +78,11 @@ row_with_date <- which(!is.na(dendrom_curves$file))## get the row positions
 
 dendrom_curves[row_with_date, "x_images"] <- as.POSIXct(point_dates, format = "%Y-%m-%d", tz = "UTC")### save it as character
 
-dendrom_curves$x_images <- as.POSIXct(dendrom_curves$x_images, origin = "1970-01-01")
+dendrom_curves$x_images <- as.POSIXct(dendrom_curves$x_images, origin = "1970-01-01") ### fine tune the x_images column to make sure the origin is "1970-01-01" so it matches
+### actual sampling dates
 
 ### Add a clear Y value for points with image
+### This are the positions in the Y axis for the image points
 
 y_values <- dendrom_curves %>% filter(file != "NA") %>% group_by(tree, file) %>% summarize(y_value_points_raw  = mean(Dendrometer, na.rm = T), 
                                                                                            y_value_points_norm  = mean(min_max_norm, na.rm = T), 
@@ -98,6 +103,7 @@ dendrom_curves_models <- dendrom_curves %>% select(tiempo, Dendrometer, tree.x,
 
 ### Gompertz Models
 ### nls_rcg and gompertz_formula are coded in "auxiliary_functions.R" file
+### Here we use "broom" functions for tidy modelling
 
 dendrom_curves_models_g <- dendrom_curves_models %>% group_by(tree.x) %>% nest() %>%
   mutate(gompertz = map(data, ~ nls_rcg(.)), tidied_gompertz = map(gompertz, tidy), gompertz_fitted  = map(gompertz, augment)) %>%
@@ -108,14 +114,14 @@ dendrom_curves_models_g <- dendrom_curves_models %>% group_by(tree.x) %>% nest()
 ### Getting Weibull initials
 
 initials_weibull <- vector(mode = "list", length = length(unique(dendrom_curves_models$tree.x)))
-names(initials_weibull) <- unique(dendrom_curves_models$tree.x)
+names(initials_weibull) <- unique(dendrom_curves_models$tree.x)### Empty vector (above) creation and we name it with tree names, it will contain the initial values for fitting the function
 
 for(i in unique(dendrom_curves_models$tree.x)){
   pos <- which(dendrom_curves_models$tree.x == i)
   initials_weibull[[i]]  <- tryCatch(getInitial(min_max_norm ~ SSweibull(steps, Asym, Drop, lrc, pwr),
                                                 data = dendrom_curves_models[pos,]), 
                                      error = function(e) paste("error"))
-}
+} ### Loop for obtaining initial values to fit function (including fail-safe if these can not be found )
 
 
 errors <- which(initials_weibull == "error")
@@ -137,13 +143,14 @@ dendrom_curves_models_fertig <- bind_cols(dendrom_curves_models_w, dendrom_curve
          "gompertz_res" = .resid1, "raw_data" = Dendrometer, 
          "SRI" = sri, step_locator)
 
-pos_steps <- match(dendrom_curves_models_fertig$step_locator,dendrom_curves_models$step_locator) ## getting back the tiempo column, get matching positions with orignal table
+pos_steps <- match(dendrom_curves_models_fertig$step_locator,dendrom_curves_models$step_locator) ## getting back the tiempo (time) column, get matching positions with original table
 
-dendrom_curves_models_fertig[,"tiempo"] <- as.vector(dendrom_curves_models[pos_steps, "tiempo"]) ### put them back carefully (tibbles are messy)
+dendrom_curves_models_fertig[,"tiempo"] <- as.vector(dendrom_curves_models[pos_steps, "tiempo"]) ### put them back carefully
 
 ### Joining Photograph info and data for Points in graph
 
-dendrom_curves_models_fertig <- left_join(dendrom_curves_models_fertig, dendrom_curves[, c("step_locator", "date", "file", "x_images", "y_value_points_norm", "y_value_points_sri")], by = "step_locator")
+dendrom_curves_models_fertig <- left_join(dendrom_curves_models_fertig, dendrom_curves[, c("step_locator", "date", "file", "x_images", "y_value_points_norm", "y_value_points_sri")],
+                                          by = "step_locator")
 
 rm(nls_rcg, dendrom_curves, pos_steps, gompertz_initials, min_max_norm, dendrom_curves_models, dendrom_curves_models_g, dendrom_curves_models_w, 
    initials_weibull, errors, gompertz_formula, i, pos, replace_par, weibull_formula)
@@ -185,7 +192,7 @@ ui <- dashboardPage(
                 box(solidHeader = T, width = 4, title = "Image", column(width = 12, imageOutput("image", height = "100%", width = "100%")), 
                     textOutput("name_image"), 
                     status = "primary"), 
-                    #style = "height:50vh"), 
+                #style = "height:50vh"), 
                 tabBox(width = 4, 
                        title = "Controls",
                        side = "right",
@@ -223,7 +230,7 @@ ui <- dashboardPage(
                       you can see a thin-section of the wood on that sampling date and compare it to derived phenology."),
                     br(), 
                     div(h3(strong("Click on the dots to see the corresponding thin-section!"), style = "color:blue")))
-              )
+                )
               ), 
       tabItem("pheno", 
               fluidRow(
@@ -348,8 +355,7 @@ server <- function(input, output) {
                                         as.character(unique(na.omit(nearPoints(dendrom_curves_models_fertig %>% filter(tree.x %in% tree_of_choice),
                                                                                input$plot_click, xvar = "x_images", yvar = "y_value_points_norm", 
                                                                                threshold = 3000000, maxpoints = 2, addDist = T)[,13])[1])[1])))
-    #substr(filename, nchar(filename)-21, nchar(filename))
-    filename
+        filename
   })
   
   output$derived_phenology <- renderPlot({
@@ -372,4 +378,3 @@ server <- function(input, output) {
 
 # Run the app ----
 shinyApp(ui = ui, server = server)
-
