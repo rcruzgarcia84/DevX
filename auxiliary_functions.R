@@ -2,7 +2,7 @@
 
 ### Wrangling of data starts
 
-wrangling_dev_x <- function(dendrom_curves, image_dates,  bilder){
+wrangling_dev_x <- function(dendrom_curves, image_dates,  bilder, user_data = F, file_path = NULL, annot_file_path = NULL){
   
   dendrom_curves <- dendrom_curves %>% mutate(step_locator = seq_along(tiempo)) %>% select(tiempo, Dendrometer, tree, step_locator) %>% na.omit() %>% 
     group_by(tree) %>% mutate(min_max_norm = min_max_norm(Dendrometer), 
@@ -35,11 +35,19 @@ wrangling_dev_x <- function(dendrom_curves, image_dates,  bilder){
   
   days_wimage[pos_bilder, "file"] <- bilder ### place the filenames in the right position
   
-  rm(bilder, pos_bilder, step_1, step_2)
+  if(user_data == T){
+    days_wimage[pos_bilder, "datapath"] <- file_path
+    if(is.null(annot_file_path)){
+    days_wimage[pos_bilder, "annot_datapath"] <- NA ### place the filenames in the right position
+    } else {days_wimage[pos_bilder, "annot_datapath"] <- annot_file_path}
+  } else {
+    days_wimage[pos_bilder, "datapath"] <- NA
+    days_wimage[pos_bilder, "annot_datapath"] <- NA
+  }
   
-  file_wimage <- days_wimage %>% select(tree, date, file) %>% mutate(dates = as.Date(date))### extract only important columns
+  file_wimage <- days_wimage %>% select(tree, date, file, datapath, annot_datapath) %>% mutate(dates = as.Date(date))### extract only important columns
   
-  colnames(file_wimage) <- c("tree", "date_posixct", "file", "date")
+  colnames(file_wimage) <- c("tree", "date_posixct", "file","datapath", "annot_datapath", "date")
   
   dendrom_curves$date <- as.Date(dendrom_curves$tiempo)
   
@@ -121,7 +129,8 @@ wrangling_dev_x <- function(dendrom_curves, image_dates,  bilder){
   
   ### Joining Photograph info and data for Points in graph
   
-  dendrom_curves_models_fertig <- left_join(dendrom_curves_models_fertig, dendrom_curves[, c("step_locator", "date", "file", "x_images", "y_value_points_norm", "y_value_points_sri")], by = "step_locator")
+  dendrom_curves_models_fertig <- left_join(dendrom_curves_models_fertig, 
+                                            dendrom_curves[, c("step_locator", "date", "file", "x_images", "y_value_points_norm", "y_value_points_sri", "datapath", "annot_datapath")], by = "step_locator")
   
   dendrom_curves_models_fertig
   
