@@ -200,8 +200,9 @@ server <- function(input, output) {
     
     
     bilder <- input$xylo_images[,1] ### "xylo_images"
+    file_path <- input$xylo_images[,4]
     
-    v$dendrom_curves_models_fertig <- wrangling_dev_x(dendrom_curves, image_dates, bilder)
+    v$dendrom_curves_models_fertig <- wrangling_dev_x(dendrom_curves, image_dates, bilder, user_data = T, file_path = file_path)
     
     ### Getting Growth phenology
     
@@ -288,6 +289,12 @@ server <- function(input, output) {
   
   
   output$image <- renderImage({
+    
+    
+    ### Separate method for Pre-loaded data and for User uploaded data
+    
+    if(input$pre_loaded){
+    
     tree_of_choice <- input$tree
     # With base graphics, need to tell it what the x and y variables are.
     if(input$image_anot != TRUE){
@@ -315,7 +322,34 @@ server <- function(input, output) {
            height = 300,
            alt = "Image file")
     }
-    
+    } else {
+      
+       tree_of_choice <- input$tree
+       # With base graphics, need to tell it what the x and y variables are.
+       if(input$image_anot != TRUE){
+         filename <- normalizePath(file.path(as.character(unique(na.omit(nearPoints(v$dendrom_curves_models_fertig %>% filter(tree.x %in% tree_of_choice),
+                                                                                    input$plot_click, xvar = "x_images", yvar = "y_value_points_norm",
+                                                                                    threshold = 3000000, maxpoints = 2, addDist = T)[,"datapath"])[1])[1])))
+         filename <- na.omit(filename)[[1]]
+         # nearPoints() also works with hover and dblclick events
+         list(src = filename,
+              contentType = "image/png",
+              width = 350,
+              height = 300,
+              alt = "Image file")
+       } else {
+         filename <- normalizePath(file.path(as.character(unique(na.omit(nearPoints(v$dendrom_curves_models_fertig %>% filter(tree.x %in% tree_of_choice),
+                                                                                     input$plot_click, xvar = "x_images", yvar = "y_value_points_norm",
+                                                                                     threshold = 3000000, maxpoints = 2, addDist = T)[,"datapath"])[1])[1])))
+         filename <- na.omit(filename)[[1]]
+         # nearPoints() also works with hover and dblclick events
+         list(src = filename,
+              contentType = "image/png",
+              width = 350,
+              height = 300,
+              alt = "Image file")
+       }
+    }
   }, deleteFile = F)
   
   output$name_image <- renderText({
