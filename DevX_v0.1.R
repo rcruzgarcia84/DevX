@@ -194,10 +194,12 @@ server <- function(input, output) {
     
     v$names_trees <- as.list(unique(dendrom_curves$tree)) %>% setNames(., unique(dendrom_curves$tree))
     
-    image_dates <- read_csv(input$dendro_csv$datapath)
+    image_dates <- read_csv(input$sampling_csv$datapath)
     
     ### Load image files, or names at least
-    #bilder <- list.files("./images")
+    
+    
+    bilder <- input$xylo_images[,1] ### "xylo_images"
     
     v$dendrom_curves_models_fertig <- wrangling_dev_x(dendrom_curves, image_dates, bilder)
     
