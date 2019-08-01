@@ -68,6 +68,18 @@ ui <- dashboardPage(
               ), 
               fluidRow(
                 box(width = 4, 
+                    title = "Upload Annotated Xylogenesis Images",
+                    solidHeader = T,
+                    status = "primary", 
+                    wellPanel(fileInput("xylo_annot_images", 
+                                        label = "Upload Images", 
+                                        multiple = T, 
+                                        buttonLabel = "Select Images (.jpeg)"
+                                        
+                    ))
+                    
+                ),
+                box(width = 4, 
                     title = "Load User Data", 
                     solidHeader = T, 
                     status = "primary", 
@@ -201,8 +213,12 @@ server <- function(input, output) {
     
     bilder <- input$xylo_images[,1] ### "xylo_images"
     file_path <- input$xylo_images[,4]
+    annot_file_path <- input$xylo_annot_images[, 4]
     
-    v$dendrom_curves_models_fertig <- wrangling_dev_x(dendrom_curves, image_dates, bilder, user_data = T, file_path = file_path)
+    
+    
+    v$dendrom_curves_models_fertig <- wrangling_dev_x(dendrom_curves, image_dates, bilder, user_data = T, file_path = file_path, 
+                                                      annot_file_path = annot_file_path)
     
     ### Getting Growth phenology
     
@@ -340,7 +356,7 @@ server <- function(input, output) {
        } else {
          filename <- normalizePath(file.path(as.character(unique(na.omit(nearPoints(v$dendrom_curves_models_fertig %>% filter(tree.x %in% tree_of_choice),
                                                                                      input$plot_click, xvar = "x_images", yvar = "y_value_points_norm",
-                                                                                     threshold = 3000000, maxpoints = 2, addDist = T)[,"datapath"])[1])[1])))
+                                                                                     threshold = 3000000, maxpoints = 2, addDist = T)[,"annot_datapath"])[1])[1])))
          filename <- na.omit(filename)[[1]]
          # nearPoints() also works with hover and dblclick events
          list(src = filename,
