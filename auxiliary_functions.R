@@ -65,7 +65,7 @@ wrangling_dev_x <- function(dendrom_curves, bilder, user_data = F, file_path = N
   ### Gompertz Models
   ### nls_rcg and gompertz_formula are coded in "auxiliary_functions.R" file
   
-  dendrom_curves_models_g <- dendrom_curves_models %>% group_by(tree.x) %>% nest() %>%
+  dendrom_curves_models_g <- dendrom_curves_models %>% group_by(tree.x) %>% nest() %>% ungroup() %>%
     mutate(gompertz = map(data, ~ nls_rcg(.)), tidied_gompertz = map(gompertz, tidy), gompertz_fitted  = map(gompertz, augment)) %>%
     unnest(gompertz_fitted)
   
@@ -90,7 +90,7 @@ wrangling_dev_x <- function(dendrom_curves, bilder, user_data = F, file_path = N
   initials_weibull <- replace(initials_weibull, errors, initials_weibull[replace_par])
   
   
-  dendrom_curves_models_w <- dendrom_curves_models %>% group_by(tree.x) %>% nest()  %>%
+  dendrom_curves_models_w <- dendrom_curves_models %>% group_by(tree.x) %>% nest()  %>% ungroup() %>%
     mutate(weibull = map2(.y = .$data, .x = initials_weibull,  ~ nls(weibull_formula, data = .y, start = unlist(.x))), 
            tidied_weibull = map(weibull, tidy), weibull_fitted  = map(weibull, augment)) %>%
     unnest(weibull_fitted)
