@@ -49,7 +49,7 @@ wrangling_dev_x <- function(dendrom_curves, bilder, user_data = F, file_path = N
   
   y_values <- dendrom_curves %>% filter(file != "NA") %>% group_by(tree, file) %>% summarize(y_value_points_raw  = mean(dendrometer, na.rm = T), 
                                                                                              y_value_points_norm  = mean(min_max_norm, na.rm = T), 
-                                                                                             y_value_points_sri  = mean(sri, na.rm = T))  
+                                                                                             y_value_points_sri  = mean(sri, na.rm = T), .groups = "keep")  
   
   dendrom_curves <- left_join(dendrom_curves, y_values, by = "file")
   ### after here is tree.x
@@ -76,6 +76,8 @@ wrangling_dev_x <- function(dendrom_curves, bilder, user_data = F, file_path = N
   initials_weibull <- vector(mode = "list", length = length(unique(dendrom_curves_models$tree.x)))
   names(initials_weibull) <- unique(dendrom_curves_models$tree.x)
   
+  
+  
   for(i in unique(dendrom_curves_models$tree.x)){
     pos <- which(dendrom_curves_models$tree.x == i)
     initials_weibull[[i]]  <- tryCatch(getInitial(min_max_norm ~ SSweibull(steps, Asym, Drop, lrc, pwr),
@@ -88,7 +90,7 @@ wrangling_dev_x <- function(dendrom_curves, bilder, user_data = F, file_path = N
   replace_par <- which(initials_weibull != "error")[1]
   
   initials_weibull <- replace(initials_weibull, errors, initials_weibull[replace_par])
-  
+
   
   dendrom_curves_models_w <- dendrom_curves_models %>% group_by(tree.x) %>% nest()  %>% ungroup() %>%
     mutate(weibull = map2(.y = .$data, .x = initials_weibull,  ~ nls(weibull_formula, data = .y, start = unlist(.x))), 
@@ -97,11 +99,16 @@ wrangling_dev_x <- function(dendrom_curves, bilder, user_data = F, file_path = N
   
   ### Putting both model and raw measurements together
   
+   colnames(dendrom_curves_models_w) <- c("tree.x", "data.w", "weibull", "tidied_weibull", 
+                                         "min_max_norm.w", "steps", ".fitted.w", ".resid.w")
+  colnames(dendrom_curves_models_g) <- c("tree", "data.g", "gompertz", "tidied_gompertz", 
+                                         "min_max_norm.g", "steps.g", ".fitted.g", ".resid.g")
+  
   dendrom_curves_models_fertig <- bind_cols(dendrom_curves_models_w, dendrom_curves_models_g,
                                             dendrom_curves_models[, c("dendrometer", "sri", "step_locator")]) %>%
-    select(tree.x, min_max_norm, steps, "weibull_fit" = .fitted, 
-           "weibull_res" = .resid, "gompertz_fit"= .fitted1, 
-           "gompertz_res" = .resid1, "raw_data" = dendrometer, 
+    select(tree.x, "min_max_norm" = min_max_norm.w, steps, "weibull_fit" = .fitted.w, 
+           "weibull_res" = .resid.w, "gompertz_fit"= .fitted.g, 
+           "gompertz_res" = .resid.g, "raw_data" = dendrometer, 
            "SRI" = sri, step_locator)
   
   pos_steps <- match(dendrom_curves_models_fertig$step_locator,dendrom_curves_models$step_locator) ## getting back the time column, get matching positions with orignal table
